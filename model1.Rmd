@@ -1,0 +1,676 @@
+---
+title: "Untitled"
+author: "Ryan Quinn"
+date: "May 1, 2020"
+output: html_document
+---
+-Load libraries 
+```{r}
+library(knitr) #for dic table
+library(rjags) #to pull in RDS
+library(ggplot2) #for posterior density plots
+library(ggridges) #also for ridge plots
+library(readr) #to pull in .txt files
+```
+
+-Load data
+```{r}
+mxg <- read_csv("E:/stats/mxg_yield.csv")
+env <- read_csv("E:/stats/mxg_env_var.csv")
+```
+
+-Add MAP and MAmT to mxg spreadsheet 
+```{r}
+mxg$prec <- ifelse(
+    is.na(match(paste(mxg$lat, mxg$lon, mxg$`harvest year`), paste(env$lat, env$lon, env$year))),
+    0,
+    env$prec)
+
+mxg$mintmp <- ifelse(
+    is.na(match(paste(mxg$lat, mxg$lon, mxg$`harvest year`), paste(env$lat, env$lon, env$year))),
+    0,
+    env$tmin)
+```
+
+-Name model covariates
+```{r}
+nrate <- mxg$nrate
+y <- mxg$mean
+estab <- mxg$establishment.year
+harv <- mxg$`harvest year`
+mxg$age <- mxg$`harvest year`- mxg$establishment.year
+age <- mxg$age
+prec <- mxg$prec
+mintmp <- mxg$mintmp
+View(mxg)
+```
+
+-Visualize covariate relationships with yield 
+```{r}
+par(mfrow=c(2,2))
+plot(mxg$prec, mxg$mean, xlab = "MAP during growing seeason (mm)", ylab = "annual yield (Mg/ha)")
+plot(mxg$mintmp, mxg$mean, xlab = "MAT (minimum) during growing season (C)", ylab = "annual yield (Mg/ha)")
+plot(mxg$age, mxg$mean, xlab = "stand age", ylab = "annual yield (Mg/ha)")
+plot(mxg$nrate, mxg$mean, xlab = "fertilization rate (Kg/ha)", ylab = "annual yield (Mg/ha)")
+
+par(mfrow=c(2,2))
+hist(mxg$prec, mxg$mean, breaks=50)
+hist(mxg$mintmp, mxg$mean, breaks=50)
+hist(mxg$nrate, log(mxg$mean), breaks=10)
+hist(mxg$age, mxg$mean, breaks=20)
+#hist(mxg$nrate^2, log(mxg$mean), breaks=20)
+
+par(mfrow=c(2,3))
+boxplot(mxg$mean[mxg$nrate == 0] ~ mxg$age[mxg$nrate == 0], main="N rate = 0")
+boxplot(mxg$mean[mxg$nrate == 67] ~ mxg$age[mxg$nrate == 67])
+boxplot(mxg$mean[mxg$nrate == 134] ~ mxg$age[mxg$nrate == 134])
+boxplot(mxg$mean[mxg$nrate == 112] ~ mxg$age[mxg$nrate == 112])
+boxplot(mxg$mean[mxg$nrate == 60] ~ mxg$age[mxg$nrate == 60])
+boxplot(mxg$mean[mxg$nrate == 202] ~ mxg$age[mxg$nrate == 202])
+boxplot(mxg$mean[mxg$nrate == 120] ~ mxg$age[mxg$nrate == 120])
+boxplot(mxg$mean[mxg$nrate == 336] ~ mxg$age[mxg$nrate == 336])
+boxplot(mxg$mean[mxg$nrate == 448] ~ mxg$age[mxg$nrate == 448])
+boxplot(mxg$mean[mxg$nrate == 224] ~ mxg$age[mxg$nrate == 224])
+```
+
+```{r}
+full.script <- "
+model {
+    # likelihood
+    for ( i in 1:n){
+mu[i] <- int + b_a*age[i] + b_n * nrate[i] + b_p * prec[i] + b_t * mintmp[i] + b_a2 * pow(age[i], 2) + b_p2 * pow(prec[i], 2) + b_t2 * pow(mintmp[i], 2) + b_an * (age[i] * nrate[i]) + b_ap * (age[i] * prec[i]) + (b_at * (age[i] * mintmp[i]))+ (b_np * (nrate[i] * prec[i])) + (b_np * (nrate[i] * mintmp[i])) + b_pt * (prec[i]*mintmp[i]) + b_an2 * pow(age[i]*nrate[i], 2) + b_ap2 * pow(age[i]*prec[i], 2) + b_at2 * pow(age[i]*mintmp[i], 2) + b_np2 * pow(nrate[i]*prec[i], 2) + b_nt2 * pow(nrate[i]*mintmp[i], 2) + b_pt2 * pow(prec[i]*mintmp[i], 2)
+y[i] ~ dlnorm(mu[i], tau) #data model
+}
+    # priors
+    int ~ dnorm(0.0, 1.0E-6)
+    b_a ~ dnorm(0.0, 1.0E-6)
+    b_p ~ dnorm(0.0, 1.0E-6)
+    b_n ~ dnorm(0.0, 1.0E-6)
+    b_t ~ dnorm(0.0, 1.0E-6)
+    b_a2 ~ dnorm(0.0, 1.0E-6)
+    b_p2 ~ dnorm(0.0, 1.0E-6)
+    b_t2 ~ dnorm(0.0, 1.0E-6) 
+    b_an ~ dnorm(0.0, 1.0E-6)
+    b_ap ~ dnorm(0.0, 1.0E-6)
+    b_at ~ dnorm(0.0, 1.0E-6)
+    b_np ~ dnorm(0.0, 1.0E-6)
+    b_nt ~ dnorm(0.0, 1.0E-6)
+    b_pt ~ dnorm(0.0, 1.0E-6)
+    b_an2 ~ dnorm(0.0, 1.0E-6)
+    b_ap2 ~ dnorm(0.0, 1.0E-6)
+    b_at2 ~ dnorm(0.0, 1.0E-6)
+    b_np2 ~ dnorm(0.0, 1.0E-6)
+    b_nt2 ~ dnorm(0.0, 1.0E-6)
+    b_pt2 ~ dnorm(0.0, 1.0E-6)
+    tau ~ dgamma(0.1, 0.1)
+
+}
+"
+newdata <- list(age=mxg$age, nrate=mxg$nrate, prec=mxg$prec, mintmp=mxg$mintmp, y=mxg$mean, n=479)
+
+full.mod    <- jags.model (file = textConnection(full.script),
+                             data = newdata,
+                             n.chains = 5)
+
+dic.samples(full.mod, n.iter=1000) 
+#DIC2.sum <- sum(DIC2$deviance)
+full.jags   <- coda.samples (model = full.mod, variable.names = c("b_a", "b_n", "b_p", "b_t", "b_a2", "b_p2", "b_n2", "b_t2", "b_an", "b_ap", "b_at", "b_np", "b_nt", "b_pt", "b_an2", "b_ap2", "b_at2", "b_np2", "b_nt2", "b_pt2", "int", "tau"), n.iter = 100000)
+#jags.burn <- window(jags.out1, start= 50000)  ## remove burn-in
+savemod1 <- as.matrix(full.jags)
+#saveRDS(par, "E:/fullmod_niprior.RDS") 
+#saveRDS(par, "E:/fullmod_burnin_niprior.RDS") 
+
+```
+
+-Diagnostics
+```{r}
+gelman.diag(full.jags)
+gelman.plot(full.jags)
+full.burn <- window(full.jags, thin=250, start= 50000)  ## remove burn-in
+gelman.diag(full.burn)
+plot(full.burn)
+effectiveSize(full.burn)
+```
+
+-Convert burned-in JAGS to matrix 
+-Use fitted model to predict yield at each observed point 
+-plot observed yield vs. fitted yield
+```{r}
+#write.table(x=par,file="E://RQjagsbun.txt",sep="\t")
+#write.table(x=mxg, file="E://RQdata.txt", sep="\t")
+par <- as.matrix(full.burn)
+int <- mean(par[,"int"])
+b_a <- mean(par[,"b_a"])
+b_n <- mean(par[,"b_n"])
+b_t <- mean(par[,"b_t"])
+b_p <- mean(par[,"b_p"])
+b_a2 <- mean(par[,"b_a2"])
+b_p2 <- mean(par[,"b_p2"])
+b_n2 <- mean(par[,"b_n2"])
+b_t2 <- mean(par[,"b_t2"])
+b_an <- mean(par[,"b_an"])
+b_ap <- mean(par[,"b_ap"])
+b_at <- mean(par[,"b_at"])
+b_np <- mean(par[,"b_np"])
+b_nt <- mean(par[,"b_nt"])
+b_pt <- mean(par[,"b_pt"])
+b_an2 <- mean(par[,"b_an2"])
+b_ap2 <- mean(par[,"b_ap2"])
+b_at2 <- mean(par[,"b_at2"])
+b_nt2 <- mean(par[,"b_nt2"])
+b_np2 <- mean(par[,"b_np2"])
+b_pt2 <- mean(par[,"b_pt2"])
+
+y <- int + b_a*mxg$age + b_n*mxg$nrate + b_p*mxg$prec + b_t*mxg$mintmp + b_a2*mxg$age^2 + b_n2*mxg$nrate^2 + b_p2*mxg$prec^2 + b_t2*mxg$mintmp^2 + b_an*(mxg$age*mxg$nrate) + b_ap*mxg$age*mxg$prec + b_at*(mxg$age*mxg$mintmp) + b_np*(mxg$nrate*mxg$prec) + b_np*(mxg$nrate*mxg$mintmp) + b_pt*(mxg$prec*mxg$mintmp) + b_an2*(mxg$age*mxg$nrate)^2 + b_ap2*(mxg$age*mxg$prec)^2 + b_at2*(mxg$age*mxg$mintmp)^2 + b_np2*(mxg$nrate*mxg$prec)^2 + b_nt2*(mxg$nrate*mxg$mintmp)^2 + b_pt2*(mxg$prec*mxg$mintmp)^2
+y.fit <- exp(y)
+y.obs <- mxg$mean
+plot(y.fit, y.obs)# ylim=c(0,50), xlim=c(0,50), ylab = "fitted yield", xlab="observed yield", main="Model 1")
+abline(0,1)
+#title(sub = "predicted vs. observed yield for full model with 1:1 line")
+y.red <- y.obs-y.fit
+plot(y.red, y.red)
+```
+
+-Normalize posterior distribution by multiplying each post. dist. value w/ SD of whole distribution
+-Plot posterior distribution on ridge plot
+```{r}
+#mult all samples of beta by the stdev of the cov to change the units (not the shape) to log yield. this is to normalize the data
+#standard deviation of the x variables 
+par.normal <- NULL
+par.normal$"b_a" <- par[,"b_a"]*sd(mxg$age)
+par.normal$"b_n" <- par[,"b_n"]*sd(mxg$age)
+par.normal$"b_p" <- par[,"b_p"]*sd(mxg$prec)
+par.normal$"b_t" <- par[,"b_t"]*sd(mxg$mintmp)
+par.normal$"b_a2" <- par[,"b_a2"]*sd(mxg$age^2)
+par.normal$"b_n2" <- par[,"b_n2"]*sd(mxg$nrate^2)
+par.normal$"b_p2" <- par[,"b_p2"]*sd(mxg$prec^2)
+par.normal$"b_t2" <- par[,"b_t2"]*sd(mxg$mintmp^2)
+
+par.normal$"b_an" <- par[,"b_an"]*sd(mxg$age*mxg$nrate)
+par.normal$"b_ap" <- par[,"b_ap"]*sd(mxg$age*mxg$prec)
+par.normal$"b_at" <- par[,"b_at"]*sd(mxg$age*mxg$mintmp)
+par.normal$"b_nt" <- par[,"b_nt"]*sd(mxg$nrate*mxg$mintmp)
+par.normal$"b_np" <- par[,"b_np"]*sd(mxg$nrate*mxg$prec)
+par.normal$"b_pt" <- par[,"b_pt"]*sd(mxg$prec*mxg$mintmp)
+par.normal$"b_an2" <- par[,"b_an2"]*sd((mxg$age*mxg$nrate)^2)
+par.normal$"b_ap2" <- par[,"b_ap2"]*sd((mxg$age*mxg$prec)^2)
+par.normal$"b_at2" <- par[,"b_at2"]*sd((mxg$age*mxg$mintmp)^2)
+par.normal$"b_nt2" <- par[,"b_nt2"]*sd((mxg$nrate*mxg$mintmp)^2)
+par.normal$"b_np2" <- par[,"b_np2"]*sd((mxg$nrate*mxg$prec)^2)
+par.normal$"b_pt2" <- par[,"b_pt2"]*sd((mxg$prec*mxg$mintmp)^2)
+
+par.normal <- cbind(b_a = par.normal$b_a, 
+                    b_n = par.normal$b_n, 
+                    b_p = par.normal$b_p, 
+                    b_t = par.normal$b_t, 
+                    b_a2 = par.normal$b_a2,
+                    b_n2 = par.normal$b_n2, 
+                    b_p2 = par.normal$b_p2,
+                    b_t2 = par.normal$b_t2,
+                    b_an = par.normal$b_an, 
+                    b_at = par.normal$b_at, 
+                    b_ap = par.normal$b_ap, 
+                    b_np = par.normal$b_np,
+                    b_nt = par.normal$b_nt,
+                    b_pt = par.normal$b_pt,
+                    b_an2 = par.normal$b_an2,
+                    b_at2 = par.normal$b_at2,
+                    b_ap2 = par.normal$b_ap2,
+                    b_nt2 = par.normal$b_nt2, 
+                    b_np2 = par.normal$b_np2,
+                    b_pt2 = par.normal$b_pt2)
+
+df <- data.frame(par.normal)
+b_a.df <- cbind(beta = rep("b_a", nrow(df)), value=df[,"b_a"])
+b_a2.df <- cbind(beta = rep("b_a2", nrow(df)), value=df[,"b_a2"])
+b_n.df <- cbind(beta = rep("b_n", nrow(df)), value=df[,"b_n"])
+b_n2.df <- cbind(beta = rep("b_n2", nrow(df)), value=df[,"b_n2"])
+b_p.df <- cbind(beta = rep("b_p", nrow(df)), value=df[,"b_p"])
+b_p2.df <- cbind(beta = rep("b_p2", nrow(df)), value=df[,"b_p2"])
+b_t.df <- cbind(beta = rep("b_t", nrow(df)), value=df[,"b_t"])
+b_t2.df <- cbind(beta = rep("b_t2", nrow(df)), value=df[,"b_t2"])
+b_an.df <- cbind(beta = rep("b_an", nrow(df)), value=df[,"b_an"])
+b_ap.df <- cbind(beta = rep("b_ap", nrow(df)), value=df[,"b_ap"])
+b_at.df <- cbind(beta = rep("b_at", nrow(df)), value=df[,"b_at"])
+b_np.df <- cbind(beta = rep("b_np", nrow(df)), value=df[,"b_np"])
+b_nt.df <- cbind(beta = rep("b_nt", nrow(df)), value=df[,"b_nt"])
+b_pt.df <- cbind(beta = rep("b_pt", nrow(df)), value=df[,"b_pt"])
+b_an2.df <- cbind(beta = rep("b_an2", nrow(df)), value=df[,"b_an2"])
+b_ap2.df <- cbind(beta = rep("b_ap2", nrow(df)), value=df[,"b_ap2"])
+b_at2.df <- cbind(beta = rep("b_at2", nrow(df)), value=df[,"b_at2"])
+b_np2.df <- cbind(beta = rep("b_np2", nrow(df)), value=df[,"b_np2"])
+b_nt2.df <- cbind(beta = rep("b_nt2", nrow(df)), value=df[,"b_nt2"])
+b_pt2.df <- cbind(beta = rep("b_pt2", nrow(df)), value=df[,"b_pt2"])
+
+df2 <- rbind.data.frame(b_a.df, 
+                        b_n.df, 
+                        b_p.df,
+                        b_t.df,
+                        b_a2.df, 
+                        b_n2.df, 
+                        b_p2.df,
+                        b_t2.df,
+                        b_an.df, 
+                        b_at.df, 
+                        b_ap.df, 
+                        b_np.df, 
+                        b_nt.df,
+                        b_pt.df,
+                        b_an2.df,
+                        b_ap2.df,
+                        b_at2.df,
+                        b_nt2.df,
+                        b_np2.df,
+                        b_pt2.df)
+
+df2$value <- as.numeric(as.character(df2$value))
+
+ggplot(df2, aes(x = (value), y = beta, fill=beta)) +
+  scale_x_continuous()+
+  geom_density_ridges(scale=2.5, alpha=0.7) +
+  theme_ridges()+xlim(-5,5)
+```
+
+-Generate plots of predicted yield over 1-8 years for 5 different fertilization levels 
+```{r}
+age <-  seq(1,6, length=6)
+prec <- seq(4.19, 4.19, length = 6)
+mintmp <-  seq(17.638, 17.638, length=6)
+
+nrate <- seq(0, 0, length = 6)
+y.n0 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+nrate <- seq(67,67, length=6)
+y.n67 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+nrate <- seq((134),(134), length=6)
+y.n134 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+nrate <- seq((201),(202), length=6)
+y.n202 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+nrate <- seq((336),(336), length=6)
+y.n336 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+nrate.0 <- data.frame("yield" = y.n0, 
+                     "nrate" = c(0),
+                     "age" = age)
+
+nrate.67 <- data.frame("yield" = y.n67, 
+                     "nrate" = c(67),
+                     "age" = age)
+nrate.134 <- data.frame("yield" = y.n134, 
+                     "nrate" = c(134),
+                     "age" = age)
+nrate.202 <- data.frame("yield" = y.n202, 
+                     "nrate" = c(202),
+                     "age" = age)
+               
+nrate.336 <- data.frame("yield" = y.n336, 
+                     "nrate" = c(336),
+                     "age" = age)
+
+nrate.df <- rbind(nrate.0, nrate.67, nrate.134, nrate.202, nrate.336)
+
+nrateobs <- subset(mxg, mxg$nrate==0 | mxg$nrate == 67 | mxg$nrate == 134 | mxg$nrate == 336 | mxg$nrate == 202) 
+nrateobs <- subset(nrateobs, nrateobs$age > 0 & nrateobs$age < 7) 
+
+nrateobs.df <- data.frame("yield" = nrateobs$mean, 
+                     "nrate" = nrateobs$nrate,
+                     "age" = nrateobs$age)
+
+```
+
+```{r}
+ggplot(nrate.df, aes(x=age, y=exp(yield),color=as.factor(nrate)), show.legend=TRUE)+
+ #geom_point(size=3)+
+  geom_line(size=1.3)+
+  geom_point(data=nrateobs.df, aes(y=yield, x=jitter(age), color=as.factor(nrate)), size=3, alpha=0.6, show.legend = TRUE )+
+  theme_classic(base_size = 13) +labs(color = "Fertilization Rate", title="Model 1")+scale_x_continuous(breaks=seq(0,6,1))+
+  theme(axis.text.x = element_text(hjust = 1, size=12))+
+  xlab('stand age (yrs)')+
+  ylab(("Annual Yield (Mg/ha)"))+
+  theme(legend.position = c(0, 1),legend.justification = c(0, 1))+
+  theme(legend.title = element_text(color = "black", size = 11, face="bold"), legend.text = element_text(color = "black", size=10))+ theme(legend.title.align=0.5)+
+  theme(axis.text = element_text(size=12))+theme(axis.title.x = element_text(margin = unit(c(5, 0, 0, 0), "mm")))+
+  theme(axis.title.y = element_text(size=14, face="bold"))+theme(axis.title.x = element_text(size=14, face="bold"))+
+  theme(plot.title = element_text(hjust=0.5, size=20, face="bold"))+ 
+  scale_color_manual(breaks = c("5", '3', '2'), values=c("red","orange", "blue", "darkgreen", "violet"))# +
+ # scale_linetype_manual(breaks = c("0", "67", "134"), values=c("solid", "dashed", "dotted"))#+scale_size(range=c(0.9))+scale_point_shape_discrete(aes(point_size=25))
+#+scale_shape_manual(breaks=c("0", "67", "134"), values=c(3, 6, 9))+scale_size(range=c(1.5))
+```
+
+
+```{r}
+#apply jitter to age and bin obs. dots by N by color
+plot(age, exp(y.n0), type = "l", xlab = "Crop Age", ylab="Yield (Kg/ha)", lwd=1, ylim=c(0,50), main = "Model 1")
+lines(age, exp(y.n671), type = "l", col = "red", lwd=2.0)
+lines(age, exp(y.n672), type = "l", col = "blue", lwd=2.0)
+lines(age, exp(y.n673), type = "l", col = "green", lwd=2.0)
+lines(age, exp(y.n674), type = "l", col = "purple", lwd=2.0)
+lines(jitter(mxg$age), mxg$mean, type="p", col=as.factor(mxg$nrate), pch=16)
+axis(1, seq(0,8,1), font=1)
+legend("topright", legend = c("0", "67", "134", "201", "268" ), col = c("black","red", "blue", "green", "purple"), lwd=1)
+#title(sub="predicted yield (lines) over 8 years for 4 fertilization treatments (kg/ha/yr), with observed yields (points) color binned by fertilization rate (jittered)")
+unique(mxg$nrate)
+```
+
+-Generate plots of predicted yield at 4 different crop ages over full range of anticipated precipitation  
+```{r}
+prec <- seq(0, 10, length = 50)
+mintmp <- seq(17.638, 17.638, length=50)
+nrate <- seq(0, 0, length=50)
+
+age <-  seq(2,2, length=50)
+y.rainfall.2.0 <-int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+age <-  seq(3,3, length=50)
+y.rainfall.3.0 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+age <- seq(7,7, length=50)
+y.rainfall.7.0 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+age <- seq(8,8, length=50)
+y.rainfall.8.0 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+nrate <- seq(67, 67, length=50)
+
+age <-  seq(2,2, length=50)
+y.rainfall.2.67 <-int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+age <-  seq(3,3, length=50)
+y.rainfall.3.67 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+age <-  seq(5,5, length=50)
+y.rainfall.5.67 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+age <- seq(7,7, length=50)
+y.rainfall.7.67 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+age <- seq(8,8, length=50)
+y.rainfall.8.67 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+nrate <- seq(67*2, 67*2, length=50)
+
+agr <-  seq(2,2, length=50)
+y.rainfall.2.134 <-int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+age <-  seq(3,3, length=50)
+y.rainfall.3.134 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+age <-  seq(5,5, length=50)
+y.rainfall.5.134 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+age <- seq(7,7, length=50)
+y.rainfall.7.134 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+age <- seq(8,8, length=50)
+y.rainfall.8.134 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+mxg.rain2 <- subset(mxg, mxg$age == 2)
+mxg.rain3 <- subset(mxg, mxg$age == 3)
+mxg.rain5 <- subset(mxg, mxg$age == 5)
+mxg.rain7 <- subset(mxg, mxg$age == 7)
+mxg.rain8 <- subset(mxg, mxg$age == 8)
+
+plot(mxg.rain2$prec, mxg.rain2$mean, xlab="precipitation (mm/day)", ylab="yield (Mg/ha)", col=factor(mxg.rain2$nrate), pch=16, ylim=c(5,40), xlim=c(0,10), main="2 yrs")
+lines(prec, exp(y.rainfall.2.0), type = "l", col="black", lwd=2)
+lines(prec, exp(y.rainfall.2.67), type = "l", col="black", lty=2, lwd=2)
+lines(prec, exp(y.rainfall.2.134), type = "l", col="black", lty=4, lwd=2)
+axis(1, seq(0,10,1), font=1)
+
+plot(mxg.rain3$prec, mxg.rain3$mean, xlab="precipitation (mm/day)", ylab="yield (Mg/ha)", col=factor(mxg.rain3$nrate), pch=16, ylim=c(5,40), xlim=c(0,10), main="3 yrs")
+lines(prec, exp(y.rainfall.3.0), type = "l", col="black", lwd=2)
+lines(prec, exp(y.rainfall.3.67), type = "l", col="black", lty=2, lwd=2)
+lines(prec, exp(y.rainfall.3.134), type = "l", col="black", lty=4, lwd=2 )
+axis(1, seq(0,10,1), font=1)
+
+plot(mxg.rain5$prec, mxg.rain5$mean, xlab="precipitation (mm/day)", ylab="yield (Mg/ha)", col=factor(mxg.rain5$nrate), pch=16, ylim=c(5,40), xlim=c(0,10), main="3 yrs")
+lines(prec, exp(y.rainfall.5.0), type = "l", col="black", lwd=2)
+lines(prec, exp(y.rainfall.5.67), type = "l", col="black", lty=2, lwd=2)
+lines(prec, exp(y.rainfall.5.134), type = "l", col="black", lty=4, lwd=2 )
+axis(1, seq(0,10,1), font=1)
+
+plot(mxg.rain7$prec, mxg.rain7$mean, xlab="precipitation (mm/day)", ylab="yield (Mg/ha)", col=factor(mxg.rain7$nrate), pch=16, ylim=c(5,40), xlim=c(0,10), main="crop age: 7 yrs")
+lines(prec, exp(y.rainfall.7), type = "p", col="red", pch=18)
+axis(1, seq(0,10,1), font=1)
+
+plot(mxg.rain8$prec, mxg.rain8$mean, xlab="precipitation (mm/day)", ylab="yield (Mg/ha)", col=factor(mxg.rain8$nrate), pch=16, ylim=c(5,40), xlim=c(0,10), main = "crop age: 8 yrs")
+lines(prec, exp(y.rainfall.8), type = "p", col="red", pch=18)
+axis(1, seq(0,10,1), font=1)
+```
+
+
+-Merge 
+```{r}
+prec.df.5.0 <- data.frame("yield" = y.rainfall.5.0, 
+                     "nrate" = c(0),
+                     "age" = c(5),
+                     "prec" = prec)
+prec.df.3.0 <- data.frame("yield" = y.rainfall.3.0, 
+                     "nrate" = c(0),
+                     "age" = c(3),
+                     "prec" = prec)
+prec.df.2.0 <- data.frame("yield" = y.rainfall.2.0, 
+                     "nrate" = c(0),
+                     "age" = c(2),
+                     "prec" = prec)
+prec.df.5.67 <- data.frame("yield" = y.rainfall.5.67, 
+                     "nrate" = c(67),
+                     "age" = c(5),
+                     "prec" = prec)
+prec.df.3.67 <- data.frame("yield" = y.rainfall.3.67, 
+                     "nrate" = c(67),
+                     "age" = c(3),
+                     "prec" = prec)
+prec.df.2.67 <- data.frame("yield" = y.rainfall.2.67, 
+                     "nrate" = c(67),
+                     "age" = c(2),
+                     "prec" = prec)
+prec.df.5.134 <- data.frame("yield" = y.rainfall.5.134, 
+                     "nrate" = c(134),
+                     "age" = c(5),
+                     "prec" = prec)
+prec.df.3.134 <- data.frame("yield" = y.rainfall.3.134, 
+                     "nrate" = c(134),
+                     "age" = c(3),
+                     "prec" = prec)
+prec.df.2.134 <- data.frame("yield" = y.rainfall.2.134, 
+                     "nrate" = c(134),
+                     "age" = c(2),
+                     "prec" = prec)
+prec.df <- rbind(prec.df.2.134, prec.df.3.134, prec.df.5.134, prec.df.2.67, prec.df.3.67, prec.df.5.67, prec.df.2.0, prec.df.3.0, prec.df.5.0)
+
+precobs <- subset(mxg, mxg$nrate==0 | mxg$nrate == 67 | mxg$nrate == 134) 
+precobs <- subset(precobs, precobs$age==2 | precobs$age == 3 | precobs$age == 5) 
+
+precobs.df <- data.frame("yield" = precobs$mean, 
+                     "nrate" = precobs$nrate,
+                     "age" = precobs$age,
+                     "prec" = precobs$prec)
+```
+
+```{r}
+ggplot(prec.df, aes(x=prec, y=exp(yield),color=as.factor(age)))+
+ #geom_point(size=3)+
+  geom_line(aes(linetype=as.factor(nrate), show=TRUE), size=1.3)+
+   geom_point(data=precobs.df, aes(y=yield, x=prec, shape=as.factor(nrate), color=as.factor(age)), size=3, alpha=0.4)+
+  theme_classic(base_size = 13) +labs(color = "Age", linetype="Fertilization Rate", title="Model 1", shape = "Fertilization Rate")+
+theme(axis.text.x = element_text(hjust = 1, size=12)) + xlab('mean daily precipitation (mm/day)') + ylab(("Annual Yield (Mg/ha)  "))+theme(legend.title = element_text(color = "black", size = 11, face="bold"), legend.text = element_text(color = "black", size=10))+ theme(legend.title.align=0.5) + theme(axis.text = element_text(size=12))+theme(axis.title.x = element_text(margin = unit(c(5, 0, 0, 0), "mm")))+theme(axis.title.y = element_text(size=14, face="bold"))+theme(axis.title.x = element_text(size=14, face="bold"))+theme(plot.title = element_text(hjust=0.5, size=20, face="bold"))+ 
+  scale_color_manual(breaks = c("5", '3', '2'), values=c("black","darkred", "steelblue")) +
+  scale_linetype_manual(breaks = c("0", "67", "134"), values=c("solid", "dashed", "dotted"))#+scale_size(range=c(0.9))+scale_point_shape_discrete(aes(point_size=25))
+#+scale_shape_manual(breaks=c("0", "67", "134"), values=c(3, 6, 9))+scale_size(range=c(1.5))
+
+```
+
+
+-Generate plots of predicted yield at 4 different crop ages over full range of anticipated mean minimum temperature during growing season
+```{r}
+prec <- seq(4.19, 4.19, length = 50)
+mintmp <- seq(12.99, 23.77, length=50)
+
+nrate <- seq(0, 0, length=50)
+
+age <-  seq(2,2, length=50)
+y.tmp.2.0 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+age <-  seq(3,3, length=50)
+y.tmp.3.0 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2 
+
+age <-  seq(5,5, length=50)
+y.tmp.5.0 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2 
+
+age <- seq(7,7, length=50)
+y.tmp.7.0 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2 
+
+age <- seq(8,8, length=50)
+y.tmp.8.0 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+nrate <- seq(67, 67, length=50)
+age <-  seq(2,2, length=50)
+y.tmp.2.67 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+age <-  seq(3,3, length=50)
+y.tmp.3.67 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2 
+
+age <-  seq(5,5, length=50)
+y.tmp.5.67 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2 
+
+age <- seq(7,7, length=50)
+y.tmp.7.67 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2 
+
+age <- seq(8,8, length=50)
+y.tmp.8.67 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+nrate <- seq(134, 134, length=50)
+
+age <-  seq(2,2, length=50)
+y.tmp.2.134 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+age <-  seq(3,3, length=50)
+y.tmp.3.134 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2 
+
+age <-  seq(5,5, length=50)
+y.tmp.5.134 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2 
+
+age <- seq(7,7, length=50)
+y.tmp.7.134 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2 
+
+age <- seq(8,8, length=50)
+y.tmp.8.134 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+mxg.rain2 <- subset(mxg, mxg$age == 2)
+mxg.rain3 <- subset(mxg, mxg$age == 3)
+mxg.rain5 <- subset(mxg, mxg$age == 5)
+mxg.rain7 <- subset(mxg, mxg$age == 7)
+mxg.rain8 <- subset(mxg, mxg$age == 8)
+par(mfrow=c(2,2))
+
+plot(mxg.rain2$mintmp, mxg.rain2$mean, xlab="mean mDT (mm)", ylab="yield (Mg/ha)", col=factor(mxg.rain2$nrate), pch=16, ylim=c(5,40), xlim=c(12,24), main="2 yrs")
+lines(mintmp, exp(y.tmp.2.0), type = "l", col="black", lwd=2)
+lines(mintmp, exp(y.tmp.2.67), type = "l", col="black", lty=2, lwd=2)
+lines(mintmp, exp(y.tmp.2.134), type = "l", col="black", lty=4, lwd=2)
+axis(1, seq(0,10,1), font=1)
+
+plot(mxg.rain3$mintmp, mxg.rain3$mean, xlab="mean mDT (°C/day)", ylab="yield (Mg/ha)", col=factor(mxg.rain3$nrate), pch=16, ylim=c(5,40), xlim=c(12,24), main="3 yrs")
+lines(mintmp, exp(y.tmp.3.0), type = "l", col="black", lwd=2)
+lines(mintmp, exp(y.tmp.3.67), type = "l", col="black", lty=2, lwd=2)
+lines(mintmp, exp(y.tmp.3.134), type = "l", col="black", lty=4, lwd=2 )
+axis(1, seq(0,10,1), font=1)
+
+plot(mxg.rain5$mintmp, mxg.rain5$mean, xlab="mean mDT (°C/day)", ylab="yield (Mg/ha)", col=factor(mxg.rain5$nrate), pch=16, ylim=c(5,55), xlim=c(12,24), main="5 yrs")
+lines(mintmp, exp(y.tmp.5.0), type = "l", col="black", lwd=2)
+lines(mintmp, exp(y.tmp.5.67), type = "l", col="black", lty=2, lwd=2)
+lines(mintmp, exp(y.tmp.5.134), type = "l", col="black", lty=4, lwd=2 )
+axis(1, seq(0,10,1), font=1)
+legend("topleft", legend = c("0", "67", "134"), col = c("black","black", "black"), lwd=2, lty=c(1,2,4))
+
+plot(mxg.rain2$mintmp, mxg.rain2$mean, xlab="minimum temp (°C/day)", ylab="yield (Mg/ha)", col=factor(mxg.rain2$nrate), pch=16, ylim=c(13,50), xlim=c(12,24), main="crop age: 2 yrs")
+lines(mintmp, exp(y.tmp.2.0), type = "p", col="red", pch= 18)
+axis(1, seq(0,10,1), font=1)
+
+plot(mxg.rain5$mintmp, mxg.rain5$mean, xlab="minimum temp (°C)", ylab="yield (Mg/ha)", col=factor(mxg.rain5$nrate), pch=16, ylim=c(13,50), xlim=c(12,24), main="crop age: 5 yrs")
+lines(mintmp, exp(y.tmp.5.0), type = "p", col="red", pch=18)
+axis(1, seq(0,10,1), font=1)
+
+
+plot(mxg.rain7$mintmp, mxg.rain7$mean, xlab="minimum temp (°C)", ylab="yield (Mg/ha)", col=factor(mxg.rain7$nrate), pch=16, ylim=c(13,50), xlim=c(12,24), main="crop age: 7 yrs")
+lines(mintmp, exp(y.tmp.7.0), type = "p", col="red", pch=18)
+axis(1, seq(0,10,1), font=1)
+
+plot(mxg.rain8$mintmp, mxg.rain8$mean, xlab="minimum temp (m°C)", ylab="yield (Mg/ha)", col=factor(mxg.rain8$nrate), pch=16, ylim=c(13,50), xlim=c(12,24), main = "crop age: 8 yrs")
+lines(mintmp, exp(y.tmp.8.0), type = "p", col="red", pch=18)
+axis(1, seq(0,10,1), font=1)
+```
+
+-Merge 
+```{r}
+tmp.df.5.0 <- data.frame("yield" = y.tmp.5.0, 
+                     "nrate" = c(0),
+                     "age" = c(5),
+                     "mdT" = mintmp)
+tmp.df.3.0 <- data.frame("yield" = y.tmp.3.0, 
+                     "nrate" = c(0),
+                     "age" = c(3),
+                     "mdT" = mintmp)
+tmp.df.2.0 <- data.frame("yield" = y.tmp.2.0, 
+                     "nrate" = c(0),
+                     "age" = c(2),
+                     "mdT" = mintmp)
+tmp.df.5.67 <- data.frame("yield" = y.tmp.5.67, 
+                     "nrate" = c(67),
+                     "age" = c(5),
+                     "mdT" = mintmp)
+tmp.df.3.67 <- data.frame("yield" = y.tmp.3.67, 
+                     "nrate" = c(67),
+                     "age" = c(3),
+                     "mdT" = mintmp)
+tmp.df.2.67 <- data.frame("yield" = y.tmp.2.67, 
+                     "nrate" = c(67),
+                     "age" = c(2),
+                     "mdT" = mintmp)
+tmp.df.5.134 <- data.frame("yield" = y.tmp.5.134, 
+                     "nrate" = c(134),
+                     "age" = c(5),
+                     "mdT" = mintmp)
+tmp.df.3.134 <- data.frame("yield" = y.tmp.3.134, 
+                     "nrate" = c(134),
+                     "age" = c(3),
+                     "mdT" = mintmp)
+tmp.df.2.134 <- data.frame("yield" = y.tmp.2.134, 
+                     "nrate" = c(134),
+                     "age" = c(2),
+                     "mdT" = mintmp)
+tmp.df <- rbind(tmp.df.2.134, tmp.df.3.134, tmp.df.5.134, tmp.df.2.67, tmp.df.3.67, tmp.df.5.67, tmp.df.2.0, tmp.df.3.0, tmp.df.5.0)
+#tmp.df$linetype <- paste(tmp.df$nrate, tmp.df$age)
+
+tmpobs <- subset(mxg, mxg$nrate==0 | mxg$nrate == 67 | mxg$nrate == 134) 
+tmpobs <- subset(tmpobs, tmpobs$age==2 | tmpobs$age == 3 | tmpobs$age == 5) 
+
+tmpobs.df <- data.frame("yield" = tmpobs$mean, 
+                     "nrate" = tmpobs$nrate,
+                     "age" = tmpobs$age,
+                     "mdT" = tmpobs$mintmp)
+```
+
+
+```{r}
+ggplot(tmp.df, aes(x=mdT, y=exp(yield),color=as.factor(age)))+
+ #geom_point(size=3)+
+  geom_line(aes(linetype=as.factor(nrate), show=TRUE), size=1.3)+
+   geom_point(data=tmpobs.df, aes(y=yield, x=mdT, shape=as.factor(tmpobs$nrate), color=as.factor(age)), size=3, alpha=0.4)+
+  theme_classic(base_size = 13) +labs(color = "Age", linetype="Fertilization Rate", title="Model 1", shape = "Fertilization Rate")+
+theme(axis.text.x = element_text(hjust = 1, size=12)) + xlab('mean daily min. Temperature ( °C)') + ylab(("Annual Yield (Mg/ha)  "))+theme(legend.title = element_text(color = "black", size = 11, face="bold"), legend.text = element_text(color = "black", size=10))+ theme(legend.title.align=0.5) + theme(axis.text = element_text(size=12))+theme(axis.title.x = element_text(margin = unit(c(5, 0, 0, 0), "mm")))+theme(axis.title.y = element_text(size=14, face="bold"))+theme(axis.title.x = element_text(size=14, face="bold"))+theme(plot.title = element_text(hjust=0.5, size=20, face="bold"))+ 
+  scale_color_manual(breaks = c("5", '3', '2'), values=c("black","orange", "steelblue")) +
+  scale_linetype_manual(breaks = c("0", "67", "134"), values=c("solid", "dashed", "dotted"))#+scale_size(range=c(0.9))+scale_point_shape_discrete(aes(point_size=25))
+#+scale_shape_manual(breaks=c("0", "67", "134"), values=c(3, 6, 9))+scale_size(range=c(1.5))
+```
+
+
+
+
+
+
+
+
+
