@@ -1,0 +1,354 @@
+
+-Load libraries
+  -JAGS psuedocode b/c shouldn't need it 
+```{r}
+#library(rjags)
+library(ggplot2)
+library(ggridges)
+```
+
+-Fit model 1 (TAKES A LONG TIME [45+ mins when not on supercomputer]. The model newscript is saved, so you can just run that and remove burnin etc. rather than wait for entire model to converge.)
+        
+-DIC psuedocode b/c takes a long time to run and all DIC info is in Excel table 
+-Remove burnin. 
+```{r, echo=FALSE}
+newscript <- "
+model {
+    # likelihood
+    for ( i in 1:n) {
+mu[i] <- int + b_a*age[i] + b_n * nrate[i] + b_p * prec[i] + b_t * mintmp[i] + b_a2 * pow(age[i], 2) + b_n2 * pow(nrate[i], 2) + b_p2 * pow(prec[i], 2) + b_t2 * pow(mintmp[i], 2) + b_an * (age[i] * nrate[i]) + b_ap * (age[i] * prec[i]) + (b_at * (age[i] * mintmp[i]))+ (b_np * (nrate[i] * prec[i])) + (b_np * (nrate[i] * mintmp[i])) + b_pt * (prec[i]*mintmp[i]) + b_an2 * pow(age[i]*nrate[i], 2) + b_ap2 * pow(age[i]*prec[i], 2) + b_at2 * pow(age[i]*mintmp[i], 2) + b_np2 * pow(nrate[i]*prec[i], 2) + b_nt2 * pow(nrate[i]*mintmp[i], 2) + b_pt2 * pow(prec[i]*mintmp[i], 2)
+y[i] ~ dlnorm(mu[i], tau) #data model
+}
+    # priors
+    int ~ dnorm(0.0, 1.0E-6)
+    b_a ~ dnorm(0.0, 1.0E-6)
+    b_p ~ dnorm(0.0, 1.0E-6)
+    b_n ~ dnorm(0.0, 1.0E-6)
+    b_t ~ dnorm(0.0, 1.0E-6)
+    b_a2 ~ dnorm(0.0, 1.0E-6)
+    b_n2 ~ dnorm(0.0, 1.0E-6)
+    b_p2 ~ dnorm(0.0, 1.0E-6)
+    b_t2 ~ dnorm(0.0, 1.0E-6)
+    b_an ~ dnorm(0.0, 1.0E-6)
+    b_ap ~ dnorm(0.0, 1.0E-6)
+    b_at ~ dnorm(0.0, 1.0E-6)
+    b_np ~ dnorm(0.0, 1.0E-6)
+    b_nt ~ dnorm(0.0, 1.0E-6)
+    b_pt ~ dnorm(0.0, 1.0E-6)
+    b_an2 ~ dnorm(0.0, 1.0E-6)
+    b_ap2 ~ dnorm(0.0, 1.0E-6)
+    b_at2 ~ dnorm(0.0, 1.0E-6)
+    b_np2 ~ dnorm(0.0, 1.0E-6)
+    b_nt2 ~ dnorm(0.0, 1.0E-6)
+    b_pt2 ~ dnorm(0.0, 1.0E-6)
+    tau ~ dgamma(0.1, 0.1)
+
+}
+"
+newdata <- list(age=mxg$age, nrate=mxg$nrate, prec=mxg$prec, mintmp = mxg$mintmp, y=mxg$mean, n=479)
+
+newmodel    <- jags.model (file = textConnection(newscript),
+                             data = newdata,
+                             n.chains = 3)
+
+#DIC2 <- dic.samples(newmodel, n.iter=1000) 
+#DIC2.sum <- sum(DIC2$deviance)
+jags.out1   <- coda.samples (model = newmodel, variable.names = c("b_a", "b_n", "b_p", "b_t", "b_a2", "b_p2", "b_n2", "b_t2", "b_an", "b_ap", "b_at", "b_np", "b_nt", "b_pt", "b_an2", "b_ap2", "b_at2", "b_np2", "b_nt2", "b_pt2", "int", "tau"), n.iter = 50000)
+jags.burn <- window(jags.out1, thin=100, start= 30000)  ## remove burn-in
+```
+
+-Diagnostics. Burn-in was discarded in previous chunk 
+```{r, echo=FALSE}
+gelman.diag(jags.out)
+gelman.plot(jags.out)
+effectiveSize(jags.burn)
+gelman.diag(jags.burn)
+plot(jags.burn)
+```
+
+-Convert burned-in JAGS to matrix 
+-Use fitted model to predict yield at each observed point 
+-plot observed yield vs. fitted yield
+```{r}
+#write.table(x=par,file="E://RQjagsbun.txt",sep="\t")
+#write.table(x=mxg, file="E://RQdata.txt", sep="\t")
+par <- as.matrix(jags.burn)
+int <- mean(par[,"int"])
+b_a <- mean(par[,"b_a"])
+b_n <- mean(par[,"b_n"])
+b_t <- mean(par[,"b_t"])
+b_p <- mean(par[,"b_p"])
+b_a2 <- mean(par[,"b_a2"])
+b_p2 <- mean(par[,"b_p2"])
+b_n2 <- mean(par[,"b_n2"])
+b_t2 <- mean(par[,"b_t2"])
+b_an <- mean(par[,"b_an"])
+b_ap <- mean(par[,"b_ap"])
+b_at <- mean(par[,"b_at"])
+b_np <- mean(par[,"b_np"])
+b_nt <- mean(par[,"b_nt"])
+b_pt <- mean(par[,"b_pt"])
+b_an2 <- mean(par[,"b_an2"])
+b_ap2 <- mean(par[,"b_ap2"])
+b_at2 <- mean(par[,"b_at2"])
+b_nt2 <- mean(par[,"b_nt2"])
+b_np2 <- mean(par[,"b_np2"])
+b_pt2 <- mean(par[,"b_pt2"])
+
+y <- int + b_a*mxg$age + b_n*mxg$nrate + b_p*mxg$prec + b_t*mxg$mintmp + b_a2*mxg$age^2 + b_n2*mxg$nrate^2 + b_p2*mxg$prec^2 + b_t2*mxg$mintmp^2 + b_an*(mxg$age*mxg$nrate) + b_ap*mxg$age*mxg$prec + b_at*(mxg$age*mxg$mintmp) + b_np*(mxg$nrate*mxg$prec) + b_np*(mxg$nrate*mxg$mintmp) + b_pt*(mxg$prec*mxg$mintmp) + b_an2*(mxg$age*mxg$nrate)^2 + b_ap2*(mxg$age*mxg$prec)^2 + b_at2*(mxg$age*mxg$mintmp)^2 + b_np2*(mxg$nrate*mxg$prec)^2 + b_nt2*(mxg$nrate*mxg$mintmp)^2 + b_pt2*(mxg$prec*mxg$mintmp)^2
+y.fit <- exp(y)
+y.obs <- mxg$mean
+plot(y.obs, y.fit, ylim=c(0,50), xlim=c(0,50), ylab = "fitted yield values", xlab="observed yield values")
+abline(0,1)
+title(sub = "predicted vs. observed yield for full model with 1:1 line")
+```
+
+-Normalize posterior distribution by multiplying each post. dist. value w/ SD of whole distribution
+-Plot posterior distribution on ridge plot
+```{r}
+par.sd <- apply(par, 2, sd) #mult all samples of beta by the strdev of the cov to change the units (not the shape) to log yield. this is to normalize the data
+par.normal <- NULL
+par.normal$"b_a" <- par[,"b_a"]*par.sd["b_a"]
+par.normal$"b_n" <- par[,"b_n"]*par.sd["b_n"]
+par.normal$"b_p" <- par[,"b_p"]*par.sd["b_p"]
+par.normal$"b_t" <- par[,"b_t"]*par.sd["b_t"]
+par.normal$"b_a2" <- par[,"b_a2"]*par.sd["b_a2"]
+par.normal$"b_n2" <- par[,"b_n2"]*par.sd["b_n2"]
+par.normal$"b_p2" <- par[,"b_p2"]*par.sd["b_p2"]
+par.normal$"b_t2" <- par[,"b_t2"]*par.sd["b_t2"]
+
+par.normal$"b_an" <- par[,"b_an"]*par.sd["b_an"]
+par.normal$"b_ap" <- par[,"b_ap"]*par.sd["b_ap"]
+par.normal$"b_at" <- par[,"b_at"]*par.sd["b_at"]
+par.normal$"b_nt" <- par[,"b_nt"]*par.sd["b_nt"]
+par.normal$"b_np" <- par[,"b_np"]*par.sd["b_np"]
+par.normal$"b_pt" <- par[,"b_pt"]*par.sd["b_pt"]
+par.normal$"b_an2" <- par[,"b_an2"]*par.sd["b_an2"]
+par.normal$"b_ap2" <- par[,"b_ap2"]*par.sd["b_ap2"]
+par.normal$"b_at2" <- par[,"b_at2"]*par.sd["b_at2"]
+par.normal$"b_nt2" <- par[,"b_nt2"]*par.sd["b_nt2"]
+par.normal$"b_np2" <- par[,"b_np2"]*par.sd["b_np2"]
+par.normal$"b_pt2" <- par[,"b_pt2"]*par.sd["b_pt2"]
+
+
+
+par.normal <- cbind(b_a = par.normal$b_a, 
+                    b_n = par.normal$b_n, 
+                    b_p = par.normal$b_p, 
+                    b_t = par.normal$b_t, 
+                    b_a2 = par.normal$b_a2,
+                    b_n2 = par.normal$b_n2, 
+                    b_p2 = par.normal$b_p2,
+                    b_t2 = par.normal$b_t2,
+                    b_an = par.normal$b_an, 
+                    b_at = par.normal$b_at, 
+                    b_ap = par.normal$b_ap, 
+                    b_np = par.normal$b_np,
+                    b_nt = par.normal$b_nt,
+                    b_pt = par.normal$b_pt,
+                    b_an2 = par.normal$b_an2,
+                    b_at2 = par.normal$b_at2,
+                    b_ap2 = par.normal$b_ap2,
+                    b_nt2 = par.normal$b_nt2, 
+                    b_np2 = par.normal$b_np2,
+                    b_pt2 = par.normal$b_pt2)
+
+df <- data.frame(par.normal)
+b_a.df <- cbind(beta = rep("b_a", nrow(df)), value=df[,"b_a"])
+b_a2.df <- cbind(beta = rep("b_a2", nrow(df)), value=df[,"b_a2"])
+b_n.df <- cbind(beta = rep("b_n", nrow(df)), value=df[,"b_n"])
+b_n2.df <- cbind(beta = rep("b_n2", nrow(df)), value=df[,"b_n2"])
+b_p.df <- cbind(beta = rep("b_p", nrow(df)), value=df[,"b_p"])
+b_p2.df <- cbind(beta = rep("b_p2", nrow(df)), value=df[,"b_p2"])
+b_t.df <- cbind(beta = rep("b_t", nrow(df)), value=df[,"b_t"])
+b_t2.df <- cbind(beta = rep("b_t2", nrow(df)), value=df[,"b_t2"])
+b_an.df <- cbind(beta = rep("b_an", nrow(df)), value=df[,"b_an"])
+b_ap.df <- cbind(beta = rep("b_ap", nrow(df)), value=df[,"b_ap"])
+b_at.df <- cbind(beta = rep("b_at", nrow(df)), value=df[,"b_at"])
+b_np.df <- cbind(beta = rep("b_np", nrow(df)), value=df[,"b_np"])
+b_nt.df <- cbind(beta = rep("b_nt", nrow(df)), value=df[,"b_nt"])
+b_pt.df <- cbind(beta = rep("b_pt", nrow(df)), value=df[,"b_pt"])
+b_an2.df <- cbind(beta = rep("b_an2", nrow(df)), value=df[,"b_an2"])
+b_ap2.df <- cbind(beta = rep("b_ap2", nrow(df)), value=df[,"b_ap2"])
+b_at2.df <- cbind(beta = rep("b_at2", nrow(df)), value=df[,"b_at2"])
+b_np2.df <- cbind(beta = rep("b_np2", nrow(df)), value=df[,"b_np2"])
+b_nt2.df <- cbind(beta = rep("b_nt2", nrow(df)), value=df[,"b_nt2"])
+b_pt2.df <- cbind(beta = rep("b_pt2", nrow(df)), value=df[,"b_pt2"])
+
+df2 <- rbind.data.frame(b_a.df, 
+                        b_n.df, 
+                        b_p.df,
+                        b_t.df,
+                        b_a2.df, 
+                        b_n2.df, 
+                        b_p2.df,
+                        b_t2.df,
+                        b_an.df, 
+                        b_at.df, 
+                        b_ap.df, 
+                        b_np.df, 
+                        b_nt.df,
+                        b_pt.df,
+                        b_an2.df,
+                        b_ap2.df,
+                        b_at2.df,
+                        b_nt2.df,
+                        b_np2.df,
+                        b_pt2.df)
+
+df2$value <- as.numeric(as.character(df2$value))
+
+postdens.mod1 <- ggplot(df2, aes(x = value, y = beta, fill=beta)) +
+  geom_density_ridges() +
+  theme_ridges() + xlim(-0.025,0.05)+
+  labs(x="standardized posterior density", y="paramater variable", caption="model 1")+
+  theme(legend.position = "none",
+        axis.title.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+  )
+postdens.mod1
+```
+
+-Generate plots of predicted yield over 1-8 years for 5 different fertilization levels 
+```{r}
+age <-  seq(1,8, length=8)
+prec <- seq(4.19, 4.19, length = 8)
+mintmp <-  seq(17.638, 17.638, length=8)
+
+nrate <- seq(0, 0, length = 8)
+y.n0 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+nrate <- seq(67,67, length=8)
+y.n671 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+nrate <- seq((67*2),(67*2), length=8)
+y.n672 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+nrate <- seq((67*3),(67*3), length=8)
+y.n673 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+nrate <- seq((67*4),(67*4), length=8)
+y.n674 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+
+#apply jitter to age and bin obs. dots by N by color
+plot(age, exp(y.n0), type = "l", xlab = "crop age", ylab="yield (Kg/ha)", lwd=1, ylim=c(0,50), main = "full model")
+lines(age, exp(y.n671), type = "l", col = "red", lwd=1.5)
+lines(age, exp(y.n672), type = "l", col = "blue", lwd=1.5)
+lines(age, exp(y.n673), type = "l", col = "green", lwd=1.5)
+lines(age, exp(y.n674), type = "l", col = "purple", lwd=1.5)
+lines(mxg$age, mxg$mean, type="p", col=as.factor(jitter(mxg$nrate, nrate)), pch=16)
+axis(1, seq(0,8,1), font=1)
+legend("topleft", legend = c("67", "134", "201", "268", "268" ), col = c("black","red", "blue", "green", "purple"), lwd=1)
+title(sub="predicted yield (lines) over 8 years for 4 fertilization treatments (kg/ha/yr), with observed yields (points) color binned by fertilization rate (jittered)")
+```
+
+-Generate plots of predicted yield at 4 different crop ages over full range of anticipated precipitation  
+```{r}
+prec <- seq(0, 10, length = 50)
+mintmp <- seq(17.638, 17.638, length=50)
+nrate <- seq(0, 0, length=50)
+
+age <-  seq(2,2, length=50)
+y.rainfall.2 <-int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+age <-  seq(5,5, length=50)
+y.rainfall.5 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+age <- seq(7,7, length=50)
+y.rainfall.7 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+age <- seq(8,8, length=50)
+y.rainfall.8 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+mxg.rain2 <- subset(mxg, mxg$age == 2)
+mxg.rain5 <- subset(mxg, mxg$age == 5)
+mxg.rain7 <- subset(mxg, mxg$age == 7)
+mxg.rain8 <- subset(mxg, mxg$age == 8)
+par(mfrow=c(2,2))
+
+plot(mxg.rain2$prec, mxg.rain2$mean, xlab="precipitation (mm/day)", ylab="yield (Mg/ha)", col=factor(mxg.rain2$nrate), pch=16, ylim=c(5,40), xlim=c(0,10), main="crop age: 2 yrs")
+lines(prec, exp(y.rainfall.2), type = "p", col="red", pch= 18)
+axis(1, seq(0,10,1), font=1)
+
+plot(mxg.rain5$prec, mxg.rain5$mean, xlab="precipitation (mm/day)", ylab="yield (Mg/ha)", col=factor(mxg.rain5$nrate), pch=16, ylim=c(5,40), xlim=c(0,10), main="crop age: 5 yrs")
+lines(prec, exp(y.rainfall.5), type = "p", col="red", pch=18)
+axis(1, seq(0,10,1), font=1)
+
+
+plot(mxg.rain7$prec, mxg.rain7$mean, xlab="precipitation (mm/day)", ylab="yield (Mg/ha)", col=factor(mxg.rain7$nrate), pch=16, ylim=c(5,40), xlim=c(0,10), main="crop age: 7 yrs")
+lines(prec, exp(y.rainfall.7), type = "p", col="red", pch=18)
+axis(1, seq(0,10,1), font=1)
+
+plot(mxg.rain8$prec, mxg.rain8$mean, xlab="precipitation (mm/day)", ylab="yield (Mg/ha)", col=factor(mxg.rain8$nrate), pch=16, ylim=c(5,40), xlim=c(0,10), main = "crop age: 8 yrs")
+lines(prec, exp(y.rainfall.8), type = "p", col="red", pch=18)
+axis(1, seq(0,10,1), font=1)
+```
+
+-Generate plots of predicted yield at 4 different crop ages over full range of anticipated mean minimum temperature during growing season
+```{r}
+prec <- seq(4.19, 4.19, length = 50)
+mintmp <- seq(12.99, 23.77, length=50)
+nrate <- seq(67, 67, length=50)
+
+age <-  seq(2,2, length=50)
+y.tmp.2 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+age <-  seq(5,5, length=50)
+y.tmp.5 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2 
+
+age <- seq(7,7, length=50)
+y.tmp.7 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2 
+
+age <- seq(8,8, length=50)
+y.tmp.8 <- int + b_a*age + b_n*nrate + b_p*prec + b_t*mintmp + b_a2*age^2 + b_n2*nrate^2 + b_p2*prec^2 + b_t2*mintmp^2 + b_an*(age*nrate) + b_ap*(age*prec) + b_at*(age*mintmp) + b_np*(nrate*prec) + b_np*(nrate*mintmp) + b_pt*(prec*mintmp) + b_an2*(age*nrate)^2 + b_ap2*(age*prec)^2 + b_at2*(age*mintmp)^2 + b_np2*(nrate*prec)^2 + b_nt2*(nrate*mintmp)^2 + b_pt2*(prec*mintmp)^2
+
+mxg.rain2 <- subset(mxg, mxg$age == 2)
+mxg.rain5 <- subset(mxg, mxg$age == 5)
+mxg.rain7 <- subset(mxg, mxg$age == 7)
+mxg.rain8 <- subset(mxg, mxg$age == 8)
+par(mfrow=c(2,2))
+
+plot(mxg.rain2$mintmp, mxg.rain2$mean, xlab="minimum temp (°C)", ylab="yield (Mg/ha)", col=factor(mxg.rain2$nrate), pch=16, ylim=c(13,50), xlim=c(12,24), main="crop age: 2 yrs")
+lines(mintmp, exp(y.tmp.2), type = "p", col="red", pch= 18)
+axis(1, seq(0,10,1), font=1)
+
+plot(mxg.rain5$mintmp, mxg.rain5$mean, xlab="minimum temp (°C)", ylab="yield (Mg/ha)", col=factor(mxg.rain5$nrate), pch=16, ylim=c(13,50), xlim=c(12,24), main="crop age: 5 yrs")
+lines(mintmp, exp(y.tmp.5), type = "p", col="red", pch=18)
+axis(1, seq(0,10,1), font=1)
+
+
+plot(mxg.rain7$mintmp, mxg.rain7$mean, xlab="minimum temp (°C)", ylab="yield (Mg/ha)", col=factor(mxg.rain7$nrate), pch=16, ylim=c(13,50), xlim=c(12,24), main="crop age: 7 yrs")
+lines(mintmp, exp(y.tmp.7), type = "p", col="red", pch=18)
+axis(1, seq(0,10,1), font=1)
+
+plot(mxg.rain8$mintmp, mxg.rain8$mean, xlab="minimum temp (m°C)", ylab="yield (Mg/ha)", col=factor(mxg.rain8$nrate), pch=16, ylim=c(13,50), xlim=c(12,24), main = "crop age: 8 yrs")
+lines(mintmp, exp(y.tmp.8), type = "p", col="red", pch=18)
+axis(1, seq(0,10,1), font=1)
+```
+-Evaluate R^2
+```{r}
+mod1.invest <- lm(mxg$mean ~ mxg$age + mxg$nrate + mxg$mintmp + mxg$prec + I(mxg$age^2) + I(mxg$nrate^2) + I(mxg$mintmp^2) + I(mxg$prec^2) + mxg$age*mxg$nrate + mxg$age*mxg$mintmp + mxg$age*mxg$prec + mxg$nrate*mxg$prec + mxg$nrate*mxg$mintmp + mxg$prec*mxg$mintmp+ I(mxg$age*mxg$nrate)^2 + I(mxg$age*mxg$mintmp)^2 + I(mxg$age*mxg$prec)^2 + I(mxg$nrate*mxg$prec)^2 + I(mxg$nrate*mxg$mintmp)^2 + I(mxg$prec*mxg$mintmp)^2, mxg)  
+summary(mod1.invest)
+```                 
+              
+
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
